@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8">
+  <title>游戏商店计算工具</title>
+  <style>
+    body {
+      font-family: sans-serif;
+      padding: 20px;
+    }
+    table {
+      border-collapse: collapse;
+      width: 100%;
+      margin-top: 10px;
+    }
+    th, td {
+      border: 1px solid #ccc;
+      padding: 6px;
+    }
+    button {
+      margin-top: 10px;
+      padding: 6px 12px;
+    }
+    select, input[type="text"], input[type="number"] {
+      width: 100%;
+      box-sizing: border-box;
+    }
+  </style>
+</head>
+<body>
+  <h1>游戏商店计算工具</h1>
+  <label for="shopSelect">选择商店：</label>
+  <select id="shopSelect" onchange="calculateTotals(); saveData();">
+    <option value="">请选择商店</option>
+    <option value="A">儿童节商店（山楂果）</option>
+    <option value="B">端午节商店（艾草）</option>
+    //<option value="C">商店 C（代币 C）</option>
+  </select>
+
+  <table id="itemsTable">
+    <thead>
+      <tr>
+        <th>商品名称</th>
+        <th>代币数量</th>
+        <th>游戏货币数量（铜）</th>
+        <th>商品数量</th>
+        <th>已购买</th>
+        <th>操作</th>
+      </tr>
+    </thead>
+    <tbody id="itemsBody"></tbody>
+  </table>
+
+  <button onclick="addItem()">添加商品</button>
+  <button onclick="clearData()">清空数据</button>
+  <button onclick="exportData()">导出数据</button>
+  <input type="file" id="importFile" accept="application/json" onchange="importData(event)" />
+
+  <p>当前选择商店：<span id="currentShop">未选择</span></p>
+  <p>所需代币总额：<span id="totalTokens">0</span></p>
+  <p>所需游戏货币总额：<span id="totalGameCurrency">0</span>（铜）</p>
+  <p>换算后：<span id="convertedCurrency"></span></p>
+
+  <script>
+    function getSelectedShopTokenName() {
+      const shop = document.getElementById('shopSelect').value;
+      if (shop === 'A') return '山楂果';
+      if (shop === 'B') return '艾草';
+      //if (shop === 'C') return '代币 C';
+      return '未选择';
+    }
+
+    function showValidationError(message) {
+      alert("数据格式有误：" + message);
+    }
+
+    function addItem(item = {}) {
+      const table = document.getElementById('itemsBody');
+      const row = document.createElement('tr');
+      row.innerHTML = `
+        <td><input type="text" value="${item.name || ''}" placeholder="商品名称" /></td>
+        <td><input type="number" value="${item.tokenAmount || 0}" min="0" /></td>
+        <td><input type="number" value="${item.gameCurrency || 0}" min="0" /></td>
+        <td><input type="number" value="${item.count || 1}" min="1" /></td>
+        <td><input type="checkbox" ${item.bought ? 'checked' : ''} onchange="calculateTotals(); saveData();" /></td>
+        <td><button onclick="this.parentElement.parentElement.remove(); calculateTotals(); saveData();">删除</button></td>
+      `;
+      table.appendChild(row);
+      row.querySelectorAll('input').forEach(input => {
+        input.addEventListener('input', () => {
+          calculateTotals();
+          saveData();
+        });
+      });
+    }
+
+    function formatCurrency(copper) {
+      const brick = Math.floor(copper / 1000000);
+      copper %= 1000000;
+      const gold = Math.floor(copper / 10000);
+      copper %= 10000;
+      const silver = Math.floor(copper / 100);
+      copper %= 100;
+      return `${brick}砖 ${gold}金 ${silver}银 ${copper}铜`;
+    }
+
+    function calculateTotals() {
+      let totalTokens = 0;
+      let totalGameCurrency = 0;
+      const selectedShopToken = getSelectedShopTokenName();
+      document.getElementById('currentShop').innerText = selectedShopToken;
+
+      const rows = document.querySelectorAll('#itemsBody tr');
+      rows.forEach(row => {
+        const inputs = row.querySelectorAll('input');
+        const tokenAmount = parseInt(inputs[1].value || 0);
+        const gameCurrency = parseInt(inputs[2].value || 0);
+        const count = parseInt(inputs[3].value || 1);
+        const bought = inputs[4].checked;
+
+        if (!bought) {
+          totalTokens += tokenAmount * count;
+          totalGameCurrency += gameCurrency * count;
+        }
+      });
+
+      document.getElementById('totalTokens').innerText = totalTokens + '（' + selectedShopToken + '）';
+      document.getElementById('totalGameCurrency').innerText = totalGameCurrency;
+      document.getElementById('convertedCurrency').innerText = formatCurrency(totalGameCurrency);
+    }
+
+    function saveData() {
+      const shop = document.getElementById('shopSelect').value;
+      const rows = document.querySelectorAll('#itemsBody tr');
+      const items = [];
+      let hasError = false;
+
+      rows.forEach((row, index) => {
+        const inputs = row.querySelectorAll('input');
+        const name = inputs[0].value.trim();
+        const tokenAmount = parseInt(inputs[1].value);
+        const gameCurrency = parseInt(inputs[2].value);
+        const count = parseInt(inputs[3].value);
+        const bought = inputs[4].checked;
+
+        if (!name) {
+          showValidationError(`第 ${index + 1} 行商品名称不能为空`);
+          hasError = true;
+          return;
+        }
+        if (isNaN(tokenAmount) || tokenAmount < 0) {
+          showValidationError(`第 ${index + 1} 行代币数量必须为非负整数`);
+          hasError = true;
+          return;
+        }
+        if (isNaN(gameCurrency) || gameCurrency < 0) {
+          showValidationError(`第 ${index + 1} 行游戏货币数量必须为非负整数`);
+          hasError = true;
+          return;
+        }
+        if (isNaN(count) || count < 1) {
+          showValidationError(`第 ${index + 1} 行商品数量必须大于 0`);
+          hasError = true;
+          return;
+        }
+
+        items.push({ name, tokenAmount, gameCurrency, count, bought });
+      });
+
+      if (hasError) return;
+
+      const data = { shop, items };
+      localStorage.setItem('gameShopData', JSON.stringify(data));
+    }
+
+    function loadData() {
+      const data = JSON.parse(localStorage.getItem('gameShopData'));
+      if (!data) return;
+      document.getElementById('shopSelect').value = data.shop || '';
+      data.items.forEach(addItem);
+      calculateTotals();
+    }
+
+    function clearData() {
+      if (confirm('确定要清除所有数据吗？')) {
+        localStorage.removeItem('gameShopData');
+        document.getElementById('itemsBody').innerHTML = '';
+        document.getElementById('shopSelect').value = '';
+        calculateTotals();
+      }
+    }
+
+    function exportData() {
+      const data = localStorage.getItem('gameShopData');
+      const blob = new Blob([data], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'game_shop_data.json';
+      a.click();
+      URL.revokeObjectURL(url);
+    }
+
+    function importData(event) {
+      const file = event.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = function (e) {
+        try {
+          const data = JSON.parse(e.target.result);
+          if (!data.shop || !Array.isArray(data.items)) {
+            showValidationError('文件缺少必要字段');
+            return;
+          }
+          document.getElementById('itemsBody').innerHTML = '';
+          document.getElementById('shopSelect').value = data.shop || '';
+          data.items.forEach(addItem);
+          saveData();
+          calculateTotals();
+        } catch (err) {
+          alert('导入失败，文件格式错误');
+        }
+      };
+      reader.readAsText(file);
+    }
+
+    window.onload = loadData;
+  </script>
+</body>
+</html>
