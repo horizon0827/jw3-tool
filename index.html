@@ -3,46 +3,64 @@
 <head>
   <meta charset="UTF-8">
   <title>游戏商店计算工具</title>
-  <style>
-    body {
-      font-family: sans-serif;
-      padding: 20px;
-    }
-    table {
-      border-collapse: collapse;
-      width: 100%;
-      margin-top: 10px;
-    }
-    th, td {
-      border: 1px solid #ccc;
-      padding: 6px;
-    }
-    button {
-      margin-top: 10px;
-      padding: 6px 12px;
-    }
+    <style>
+    body { font-family: sans-serif; padding: 20px; line-height: 1.6; }
+    table { border-collapse: collapse; width: 100%; margin-top: 10px; }
+    th, td { border: 1px solid #ccc; padding: 6px; text-align: center; }
+    button { margin: 5px; padding: 6px 12px; cursor: pointer; }
     select, input[type="text"], input[type="number"] {
-      width: 100%;
       box-sizing: border-box;
+      padding: 4px;
+    }
+
+    .currency-inputs {
+      display: flex;
+      gap: 5px;
+      justify-content: center;
+      align-items: center;
+    }
+    .currency-inputs input {
+      width: 50px;
+    }
+
+    #ownedTokensContainer {
+      margin-top: 20px;
+    }
+
+    #shopManagerModal {
+      display: none;
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      background: #fff;
+      border: 1px solid #ccc;
+      padding: 20px;
+      z-index: 1000;
+      width: 60%;
+      box-shadow: 0 0 10px rgba(0,0,0,0.3);
     }
   </style>
 </head>
 <body>
   <h1>游戏商店计算工具</h1>
+
   <label for="shopSelect">选择商店：</label>
-  <select id="shopSelect" onchange="calculateTotals(); saveData();">
-    <option value="">请选择商店</option>
-    <option value="A">儿童节商店（山楂果）</option>
-    <option value="B">端午节商店（艾草）</option>
-    //<option value="C">商店 C（代币 C）</option>
-  </select>
+  <select id="shopSelect" onchange="calculateTotals(); saveData();"></select>
+  <button onclick="openShopManager()">编辑商店</button>
+
+
+  <div style="margin-top:10px">
+    <label for="ownedTokens">已有代币数量：</label>
+    <input type="number" id="ownedTokens" value="0" min="0" oninput="calculateTotals()" />
+  </div>
 
   <table id="itemsTable">
     <thead>
       <tr>
         <th>商品名称</th>
         <th>代币数量</th>
-        <th>游戏货币数量（铜）</th>
+        <th>游戏货币（金币/银币/铜币）</th>
         <th>商品数量</th>
         <th>已购买</th>
         <th>操作</th>
@@ -58,17 +76,57 @@
 
   <p>当前选择商店：<span id="currentShop">未选择</span></p>
   <p>所需代币总额：<span id="totalTokens">0</span></p>
-  <p>所需游戏货币总额：<span id="totalGameCurrency">0</span>（铜）</p>
-  <p>换算后：<span id="convertedCurrency"></span></p>
+  <p>已有代币：<span id="ownedTokenDisplay">0</span></p>
+  <p>还需代币：<span id="tokenDiff">0</span></p>
+  <p>所需游戏货币总额（铜）：<span id="totalGameCurrency">0</span></p>
+  <p>换算后：<span id="convertedCurrency">0铜</span></p>
+
+  <!-- 商店管理弹窗 -->
+  <div id="shopManagerModal">
+    <h3>商店管理</h3>
+    <table id="shopTable">
+      <thead>
+        <tr><th>商店名称</th><th>代币名称</th><th>操作</th></tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+    <button onclick="addShopRow()">添加商店</button>
+    <button onclick="saveShopSettings()">保存修改</button>
+    <button onclick="closeShopManager()">关闭</button>
+  </div>
 
   <script>
-    function getSelectedShopTokenName() {
-      const shop = document.getElementById('shopSelect').value;
-      if (shop === 'A') return '山楂果';
-      if (shop === 'B') return '艾草';
-      //if (shop === 'C') return '代币 C';
-      return '未选择';
+    let shopSettings = JSON.parse(localStorage.getItem('shopSettings')) || [
+      { id: 'A', name: '商店 A', token: '代币 A' },
+      { id: 'B', name: '商店 B', token: '代币 B' },
+      { id: 'C', name: '商店 C', token: '代币 C' }
+    ];
+    
+    function getSelectedShopInfo() {
+    const shopId = document.getElementById('shopSelect').value;
+    const shop = shopSettings.find(s => s.id === shopId);
+    return shop || { name: '未选择', token: '未选择' };
+  }
+
+    function updateShopSelect() {
+      const select = document.getElementById('shopSelect');
+      const current = select.value;
+      select.innerHTML = '<option value="">请选择商店</option>';
+      shopSettings.forEach(shop => {
+        const option = document.createElement('option');
+        option.value = shop.id;
+        option.textContent = `${shop.name}（${shop.token}）`;
+        if (shop.id === current) option.selected = true;
+        select.appendChild(option);
+      });
     }
+
+    function getSelectedShopTokenName() {
+      const shopId = document.getElementById('shopSelect').value;
+      const found = shopSettings.find(s => s.id === shopId);
+      return found ? found.token : '未选择';
+    }
+
 
     function showValidationError(message) {
       alert("数据格式有误：" + message);
@@ -80,7 +138,13 @@
       row.innerHTML = `
         <td><input type="text" value="${item.name || ''}" placeholder="商品名称" /></td>
         <td><input type="number" value="${item.tokenAmount || 0}" min="0" /></td>
-        <td><input type="number" value="${item.gameCurrency || 0}" min="0" /></td>
+        <td>
+          <div class="currency-inputs">
+            <input type="number" value="${item.gold || 0}" min="0" placeholder="金" />
+            <input type="number" value="${item.silver || 0}" min="0" placeholder="银" />
+            <input type="number" value="${item.copper || 0}" min="0" placeholder="铜" />
+          </div>
+        </td>
         <td><input type="number" value="${item.count || 1}" min="1" /></td>
         <td><input type="checkbox" ${item.bought ? 'checked' : ''} onchange="calculateTotals(); saveData();" /></td>
         <td><button onclick="this.parentElement.parentElement.remove(); calculateTotals(); saveData();">删除</button></td>
@@ -94,9 +158,13 @@
       });
     }
 
+    function currencyToCopper(g, s, c) {
+      return g * 10000 + s * 100 + c;
+    }
+
     function formatCurrency(copper) {
-      const brick = Math.floor(copper / 1000000);
-      copper %= 1000000;
+      const brick = Math.floor(copper / 100000000);
+      copper %= 100000000;
       const gold = Math.floor(copper / 10000);
       copper %= 10000;
       const silver = Math.floor(copper / 100);
@@ -107,24 +175,34 @@
     function calculateTotals() {
       let totalTokens = 0;
       let totalGameCurrency = 0;
-      const selectedShopToken = getSelectedShopTokenName();
-      document.getElementById('currentShop').innerText = selectedShopToken;
+      let totalCount = 0;
+
+      const shopInfo = getSelectedShopInfo();
+      document.getElementById('currentShop').innerText = shopInfo.name;
 
       const rows = document.querySelectorAll('#itemsBody tr');
       rows.forEach(row => {
         const inputs = row.querySelectorAll('input');
         const tokenAmount = parseInt(inputs[1].value || 0);
-        const gameCurrency = parseInt(inputs[2].value || 0);
-        const count = parseInt(inputs[3].value || 1);
-        const bought = inputs[4].checked;
+        const gold = parseInt(inputs[2].value || 0);
+        const silver = parseInt(inputs[3].value || 0);
+        const copper = parseInt(inputs[4].value || 0);
+        const count = parseInt(inputs[5].value || 1);
+        const bought = inputs[6].checked;
+
+        const currency = currencyToCopper(gold, silver, copper);
 
         if (!bought) {
           totalTokens += tokenAmount * count;
-          totalGameCurrency += gameCurrency * count;
+          totalGameCurrency += currency * count;
+          totalCount += count;
         }
       });
 
-      document.getElementById('totalTokens').innerText = totalTokens + '（' + selectedShopToken + '）';
+      const owned = parseInt(document.getElementById('ownedTokens').value || 0);
+      document.getElementById('totalTokens').innerText = totalTokens + `（${shopInfo.token}）`;
+      document.getElementById('ownedTokenDisplay').innerText = owned;
+      document.getElementById('tokenDiff').innerText = Math.max(0, totalTokens - owned);
       document.getElementById('totalGameCurrency').innerText = totalGameCurrency;
       document.getElementById('convertedCurrency').innerText = formatCurrency(totalGameCurrency);
     }
@@ -139,44 +217,36 @@
         const inputs = row.querySelectorAll('input');
         const name = inputs[0].value.trim();
         const tokenAmount = parseInt(inputs[1].value);
-        const gameCurrency = parseInt(inputs[2].value);
-        const count = parseInt(inputs[3].value);
-        const bought = inputs[4].checked;
+        const gold = parseInt(inputs[2].value);
+        const silver = parseInt(inputs[3].value);
+        const copper = parseInt(inputs[4].value);
+        const count = parseInt(inputs[5].value);
+        const bought = inputs[6].checked;
 
         if (!name) {
           showValidationError(`第 ${index + 1} 行商品名称不能为空`);
           hasError = true;
           return;
         }
-        if (isNaN(tokenAmount) || tokenAmount < 0) {
-          showValidationError(`第 ${index + 1} 行代币数量必须为非负整数`);
-          hasError = true;
-          return;
-        }
-        if (isNaN(gameCurrency) || gameCurrency < 0) {
-          showValidationError(`第 ${index + 1} 行游戏货币数量必须为非负整数`);
-          hasError = true;
-          return;
-        }
-        if (isNaN(count) || count < 1) {
-          showValidationError(`第 ${index + 1} 行商品数量必须大于 0`);
-          hasError = true;
-          return;
-        }
 
-        items.push({ name, tokenAmount, gameCurrency, count, bought });
+        items.push({ name, tokenAmount, gold, silver, copper, count, bought });
       });
 
       if (hasError) return;
 
-      const data = { shop, items };
+      const data = {
+        shop, items,
+        ownedTokens: parseInt(document.getElementById('ownedTokens').value || 0)
+      };
       localStorage.setItem('gameShopData', JSON.stringify(data));
     }
 
     function loadData() {
       const data = JSON.parse(localStorage.getItem('gameShopData'));
       if (!data) return;
+      updateShopSelect();
       document.getElementById('shopSelect').value = data.shop || '';
+      document.getElementById('ownedTokens').value = data.ownedTokens || 0;
       data.items.forEach(addItem);
       calculateTotals();
     }
@@ -186,6 +256,7 @@
         localStorage.removeItem('gameShopData');
         document.getElementById('itemsBody').innerHTML = '';
         document.getElementById('shopSelect').value = '';
+        document.getElementById('ownedTokens').value = 0;
         calculateTotals();
       }
     }
@@ -214,6 +285,7 @@
           }
           document.getElementById('itemsBody').innerHTML = '';
           document.getElementById('shopSelect').value = data.shop || '';
+          document.getElementById('ownedTokens').value = data.ownedTokens || 0;
           data.items.forEach(addItem);
           saveData();
           calculateTotals();
@@ -224,7 +296,61 @@
       reader.readAsText(file);
     }
 
+    function openShopManager() {
+      const modal = document.getElementById('shopManagerModal');
+      const tbody = modal.querySelector('tbody');
+      tbody.innerHTML = '';
+      shopSettings.forEach((shop, index) => {
+        const row = document.createElement('tr');
+        row.innerHTML = `
+          <td><input type="text" value="${shop.name}" class="shopName" /></td>
+          <td><input type="text" value="${shop.token}" class="shopToken" /></td>
+          <td><button onclick="removeShopRow(${index})">删除</button></td>
+        `;
+        tbody.appendChild(row);
+      });
+      modal.style.display = 'block';
+    }
+
+    function addShopRow() {
+      shopSettings.push({
+        id: 'custom_' + Date.now(),
+        name: '新商店',
+        token: '新代币'
+      });
+      openShopManager();
+    }
+
+    function removeShopRow(index) {
+      const currentShop = document.getElementById('shopSelect').value;
+      if (shopSettings[index].id === currentShop) {
+        alert('不能删除当前正在使用的商店');
+        return;
+      }
+      shopSettings.splice(index, 1);
+      openShopManager();
+    }
+
+    function saveShopSettings() {
+      const rows = document.querySelectorAll('#shopManagerModal tbody tr');
+      shopSettings = Array.from(rows).map((row, idx) => {
+        const name = row.querySelector('.shopName').value.trim();
+        const token = row.querySelector('.shopToken').value.trim();
+        const id = shopSettings[idx]?.id || 'custom_' + Date.now();
+        return { id, name, token };
+      });
+      localStorage.setItem('shopSettings', JSON.stringify(shopSettings));
+      updateShopSelect();
+      calculateTotals();
+      closeShopManager();
+    }
+
+    function closeShopManager() {
+      document.getElementById('shopManagerModal').style.display = 'none';
+    }
+
     window.onload = loadData;
+
   </script>
 </body>
 </html>
