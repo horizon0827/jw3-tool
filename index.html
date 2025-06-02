@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html lang="zh">
 <head>
+    <script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
   <meta charset="UTF-8">
   <title>游戏商店计算工具</title>
   <style>
@@ -66,6 +67,7 @@
   <button onclick="addItem()">添加商品</button>
   <button onclick="clearData()">清空数据</button>
   <button onclick="exportData()">导出数据</button>
+  <button onclick="exportToExcel()">导出为 Excel</button>
   <input type="file" id="importFile" accept="application/json" onchange="importData(event)" />
 
   <div style="margin-top:10px">
@@ -93,7 +95,7 @@
     <button onclick="saveShopSettings()">保存修改</button>
     <button onclick="closeShopManager()">关闭</button>
   </div>
-
+  
   <script>
     let shopSettings = JSON.parse(localStorage.getItem('shopSettings')) || [
       { id: 'A', name: '商店 A', token: '代币 A' },
@@ -318,15 +320,51 @@
       document.getElementById('shopManagerModal').style.display = 'none';
     }
 
+    function exportToExcel() {
+    const shopId = document.getElementById('shopSelect').value;
+    if (!shopId) {
+      alert('请先选择一个商店');
+      return;
+    }
+
+    // 获取该商店的商品数据
+    const items = allShopItems[shopId] || [];
+
+    // 转成Excel所需的数组，首行是表头
+    const data = [
+      ['商品名称', '代币数量', '金', '银', '铜', '商品数量', '已购买']
+    ];
+
+    items.forEach(item => {
+      data.push([
+        item.name || '',
+        item.tokenAmount || 0,
+        item.gold || 0,
+        item.silver || 0,
+        item.copper || 0,
+        item.count || 1,
+        item.bought ? '是' : '否'
+      ]);
+    });
+
+    // 创建工作簿和工作表
+    const ws = XLSX.utils.aoa_to_sheet(data);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, shopSettings.find(s => s.id === shopId)?.name || '商店');
+
+    // 导出Excel文件
+    XLSX.writeFile(wb, `${shopSettings.find(s => s.id === shopId)?.name || '商店'}_商品列表.xlsx`);
+  }
+
     window.onload = () => {
       updateShopSelect();
       changeShop();
 
-  document.getElementById('ownedTokens').addEventListener('input', () => {
-    const shopId = document.getElementById('shopSelect').value;
-    if (!shopId) return;
-    localStorage.setItem(`owned_${shopId}`, document.getElementById('ownedTokens').value);
-    calculateTotals();
+    document.getElementById('ownedTokens').addEventListener('input', () => {
+      const shopId = document.getElementById('shopSelect').value;
+      if (!shopId) return;
+      localStorage.setItem(`owned_${shopId}`, document.getElementById('ownedTokens').value);
+      calculateTotals();
   });
 };
 
